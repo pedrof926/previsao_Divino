@@ -2,7 +2,7 @@
 """
 Painel Dash - Previsão personalizada (Divino)
 
-Lê arquivos PNG na MESMA PASTA do app.py, com nomes:
+Lê arquivos PNG na pasta do próprio app, com nomes:
     divino_prec_YYYY-MM-DD.png
     divino_prec_acumulada_YYYY-MM-DD_a_YYYY-MM-DD.png
 
@@ -10,8 +10,6 @@ Permite:
 - Ver mapa diário de precipitação
 - Ver animação ao longo dos dias (todos os arquivos encontrados)
 - Ver o mapa de precipitação acumulada no período
-
-As figuras são exibidas em dcc.Graph com zoom/pan via scroll do mouse.
 """
 
 from pathlib import Path
@@ -24,17 +22,15 @@ import plotly.graph_objects as go
 
 # ----------------- CONFIGURAÇÕES ----------------- #
 
-# Local das figuras do Divino (mesmo diretório do app.py)
+# Local das figuras (mesmo diretório do app.py)
 IMG_DIR = Path(__file__).parent
 
 # Pontos de foco (coordenadas normalizadas 0–1 na imagem)
-# Ajuste "no olho" até cair certinho em cima dos pontos na figura.
 PONTOS_FOCO = {
-    # Exemplo:
+    # Exemplo de uso:
     # "Casa": {"x": 0.45, "y": 0.60},
     # "Trabalho": {"x": 0.72, "y": 0.35},
 }
-
 
 # ----------------- VARIÁVEIS DISPONÍVEIS ----------------- #
 
@@ -51,12 +47,11 @@ VAR_OPCOES = {
     },
 }
 
-
 # ----------------- FUNÇÕES AUXILIARES ----------------- #
 
 def listar_datas_disponiveis():
     """
-    Varre a pasta do app e procura arquivos de precipitação diária:
+    Procura arquivos:
         divino_prec_YYYY-MM-DD.png
     e usa o sufixo YYYY-MM-DD como 'data_tag'.
     """
@@ -73,8 +68,7 @@ def listar_datas_disponiveis():
         except ValueError:
             continue
 
-    datas_ordenadas = sorted(datas)
-    return datas_ordenadas
+    return sorted(datas)
 
 
 def formatar_label_br(data_iso: str) -> str:
@@ -83,11 +77,10 @@ def formatar_label_br(data_iso: str) -> str:
     return dt.strftime("%d/%m/%Y")
 
 
-def carregar_imagem_base64(var_key: str, data_iso: str = None) -> str:
+def carregar_imagem_base64(var_key: str, data_iso: str | None = None) -> str:
     """
     Lê o arquivo PNG correspondente à variável e data,
-    converte em base64 para embutir no Dash:
-      data:image/png;base64,....
+    converte em base64 para embutir no Dash.
 
     Para 'prec_acum', ignora data_iso e pega o arquivo acumulado mais recente.
     """
@@ -116,10 +109,7 @@ def carregar_imagem_base64(var_key: str, data_iso: str = None) -> str:
 
 
 def adicionar_pontos_foco(fig: go.Figure) -> go.Figure:
-    """
-    Adiciona marcadores dos pontos de foco (Casa, Trabalho etc.)
-    em coordenadas normalizadas (x,y de 0 a 1).
-    """
+    """Adiciona marcadores dos pontos de foco."""
     if not PONTOS_FOCO:
         return fig
 
@@ -138,20 +128,15 @@ def adicionar_pontos_foco(fig: go.Figure) -> go.Figure:
                 size=10,
                 symbol="circle-open-dot",
                 line=dict(width=2),
-                # cor padrão do tema, não precisa fixar
             ),
             hovertemplate="%{text}<extra></extra>",
         )
     )
-
     return fig
 
 
 def construir_figura_estatica(src: str, titulo: str) -> go.Figure:
-    """
-    Constrói uma figura Plotly contendo UMA imagem base64,
-    com eixos ocultos, mas permitindo zoom/pan.
-    """
+    """Figura estática com a imagem base64 + pontos de foco."""
     fig = go.Figure()
     if not src:
         fig.update_layout(
@@ -180,7 +165,6 @@ def construir_figura_estatica(src: str, titulo: str) -> go.Figure:
     fig.update_xaxes(visible=False, range=[0, 1])
     fig.update_yaxes(visible=False, range=[0, 1], scaleanchor="x")
 
-    # adiciona marcadores dos pontos de foco
     fig = adicionar_pontos_foco(fig)
 
     fig.update_layout(
@@ -193,15 +177,11 @@ def construir_figura_estatica(src: str, titulo: str) -> go.Figure:
 
 
 def construir_animacao(var_key: str, datas_iso: list[str]) -> go.Figure:
-    """
-    Constrói figura animada: cada frame é uma data da previsão.
-    Usa layout.images nos frames pra trocar o mapa.
-    """
+    """Figura animada: um frame por data da previsão."""
     if len(datas_iso) == 0:
         return construir_figura_estatica("", "Sem dados para animar")
 
     src0 = carregar_imagem_base64(var_key, datas_iso[0])
-
     fig = go.Figure()
 
     if src0:
@@ -302,7 +282,6 @@ def construir_animacao(var_key: str, datas_iso: list[str]) -> go.Figure:
         )
     ]
 
-    # adiciona marcadores de foco na animação também (trace fixo)
     fig = adicionar_pontos_foco(fig)
 
     fig.update_layout(
@@ -313,11 +292,9 @@ def construir_animacao(var_key: str, datas_iso: list[str]) -> go.Figure:
         paper_bgcolor="white",
         plot_bgcolor="white",
     )
-
     return fig
 
-
-# ----------------- PREPARA LISTA DE DATAS ----------------- #
+# ----------------- DATAS ----------------- #
 
 DATAS = listar_datas_disponiveis()
 if not DATAS:
@@ -328,11 +305,10 @@ if not DATAS:
 
 DATA_DEFAULT = DATAS[-1]
 
-
 # ----------------- APP DASH ----------------- #
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-server = app.server  # usado pelo gunicorn no Render
+server = app.server  # usado pelo gunicorn
 
 app.title = "Previsão de Chuva - Divino"
 
@@ -352,7 +328,6 @@ app.layout = dbc.Container(
 
         dbc.Row(
             [
-                # COLUNA ESQUERDA: CONTROLES
                 dbc.Col(
                     [
                         html.H5("Campos de seleção", className="mb-3"),
@@ -401,8 +376,6 @@ app.layout = dbc.Container(
                     lg=3,
                     xl=3,
                 ),
-
-                # COLUNA DIREITA: FIGURA GRANDE
                 dbc.Col(
                     [
                         dcc.Graph(
@@ -412,7 +385,7 @@ app.layout = dbc.Container(
                                 "scrollZoom": True,
                                 "displayModeBar": False,
                             },
-                        ),
+                        )
                     ],
                     md=9,
                     lg=9,
@@ -432,7 +405,6 @@ app.layout = dbc.Container(
     fluid=True,
 )
 
-
 # ----------------- CALLBACK ----------------- #
 
 @app.callback(
@@ -442,43 +414,33 @@ app.layout = dbc.Container(
     Input("radio-modo", "value"),
 )
 def atualizar_mapa(data_iso, var_key, modo):
-    """
-    Atualiza a figura exibida de acordo com:
-      - data escolhida (para modo diário)
-      - tipo de mapa (prec / prec_acum)
-      - modo (dia / anim)
-    """
     if var_key is None:
         return go.Figure()
 
     info = VAR_OPCOES[var_key]
 
-    # Mapa acumulado -> sempre estático, ignora modo e data
+    # Acumulado: sempre estático
     if var_key == "prec_acum":
         src = carregar_imagem_base64("prec_acum", None)
-        fig = construir_figura_estatica(src, info["label"])
-        return fig
+        return construir_figura_estatica(src, info["label"])
 
-    # Mapa diário
+    # Diário
     if modo == "dia":
         if data_iso is None:
             return go.Figure()
         label_data = formatar_label_br(data_iso)
         titulo = f"{info['label']} – {label_data}"
         src = carregar_imagem_base64(var_key, data_iso)
-        fig = construir_figura_estatica(src, titulo)
-        return fig
+        return construir_figura_estatica(src, titulo)
     else:
-        # animação da precipitação diária ao longo de todos os dias
-        fig = construir_animacao(var_key, DATAS)
-        return fig
+        return construir_animacao(var_key, DATAS)
 
-
-# ----------------- MAIN (para rodar local) ----------------- #
+# ----------------- MAIN (apenas local) ----------------- #
 
 if __name__ == "__main__":
     print("Painel Divino rodando em http://127.0.0.1:8050/")
     app.run(host="0.0.0.0", port=8050, debug=True)
+
 
 
 if __name__ == "__main__":
