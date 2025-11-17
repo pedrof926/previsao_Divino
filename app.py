@@ -2,9 +2,7 @@
 """
 Painel Dash - Previsão personalizada (Divino)
 
-Lê arquivos PNG em:
-    prev_divino/
-com nomes do tipo:
+Lê arquivos PNG na MESMA PASTA do app.py, com nomes:
     divino_prec_YYYY-MM-DD.png
     divino_prec_acumulada_YYYY-MM-DD_a_YYYY-MM-DD.png
 
@@ -26,8 +24,8 @@ import plotly.graph_objects as go
 
 # ----------------- CONFIGURAÇÕES ----------------- #
 
-# Local das figuras do Divino (subpasta prev_divino ao lado do script)
-IMG_DIR = Path(__file__).parent / "prev_divino"
+# Local das figuras do Divino (mesmo diretório do app.py)
+IMG_DIR = Path(__file__).parent
 
 # Pontos de foco (coordenadas normalizadas 0–1 na imagem)
 # Ajuste "no olho" até cair certinho em cima dos pontos na figura.
@@ -58,7 +56,7 @@ VAR_OPCOES = {
 
 def listar_datas_disponiveis():
     """
-    Varre a pasta prev_divino e procura arquivos de precipitação diária:
+    Varre a pasta do app e procura arquivos de precipitação diária:
         divino_prec_YYYY-MM-DD.png
     e usa o sufixo YYYY-MM-DD como 'data_tag'.
     """
@@ -85,7 +83,7 @@ def formatar_label_br(data_iso: str) -> str:
     return dt.strftime("%d/%m/%Y")
 
 
-def carregar_imagem_base64(var_key: str, data_iso: str | None) -> str:
+def carregar_imagem_base64(var_key: str, data_iso: str = None) -> str:
     """
     Lê o arquivo PNG correspondente à variável e data,
     converte em base64 para embutir no Dash:
@@ -140,6 +138,7 @@ def adicionar_pontos_foco(fig: go.Figure) -> go.Figure:
                 size=10,
                 symbol="circle-open-dot",
                 line=dict(width=2),
+                # cor padrão do tema, não precisa fixar
             ),
             hovertemplate="%{text}<extra></extra>",
         )
@@ -333,7 +332,7 @@ DATA_DEFAULT = DATAS[-1]
 # ----------------- APP DASH ----------------- #
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-server = app.server  # útil depois pro Render/gunicorn
+server = app.server  # usado pelo gunicorn no Render
 
 app.title = "Previsão de Chuva - Divino"
 
@@ -475,7 +474,12 @@ def atualizar_mapa(data_iso, var_key, modo):
         return fig
 
 
-# ----------------- MAIN ----------------- #
+# ----------------- MAIN (para rodar local) ----------------- #
+
+if __name__ == "__main__":
+    print("Painel Divino rodando em http://127.0.0.1:8050/")
+    app.run(host="0.0.0.0", port=8050, debug=True)
+
 
 if __name__ == "__main__":
     # rodar local
