@@ -6,10 +6,17 @@ Lê arquivos PNG na pasta do próprio app, com nomes:
     divino_prec_YYYY-MM-DD.png
     divino_prec_acumulada_YYYY-MM-DD_a_YYYY-MM-DD.png
 
+E também um PNG fixo (gráfico 4 pontos):
+    prec_4_pontos_2x2.png
+
 Permite:
 - Ver mapa diário de precipitação
 - Ver animação ao longo dos dias (todos os arquivos encontrados)
 - Ver o mapa de precipitação acumulada no período
+
+Ao abrir o site:
+- Mostra o gráfico fixo (4 pontos) à esquerda
+- Mostra o mapa com controles à direita
 """
 
 from pathlib import Path
@@ -25,11 +32,13 @@ import plotly.graph_objects as go
 # Local das figuras (mesmo diretório do app.py)
 IMG_DIR = Path(__file__).parent
 
-# Pontos de foco (coordenadas normalizadas 0–1 na imagem)
+# Nome do PNG fixo (4 pontos)
+FIXO_4PONTOS_PNG = "prec_4_pontos_2x2.png"
+
+# Pontos de foco (coordenadas normalizadas 0–1 na imagem) - opcional
 PONTOS_FOCO = {
-    # Exemplo de uso:
+    # Exemplo:
     # "Casa": {"x": 0.45, "y": 0.60},
-    # "Trabalho": {"x": 0.72, "y": 0.35},
 }
 
 # ----------------- VARIÁVEIS DISPONÍVEIS ----------------- #
@@ -108,6 +117,17 @@ def carregar_imagem_base64(var_key: str, data_iso: str | None = None) -> str:
     return f"data:image/png;base64,{encoded}"
 
 
+def carregar_png_fixo_base64(nome_arquivo: str) -> str:
+    """Carrega um PNG fixo no diretório do app e retorna base64."""
+    img_path = IMG_DIR / nome_arquivo
+    if not img_path.exists():
+        print(f"⚠️ PNG fixo não encontrado: {img_path}")
+        return ""
+    with open(img_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
 def adicionar_pontos_foco(fig: go.Figure) -> go.Figure:
     """Adiciona marcadores dos pontos de foco."""
     if not PONTOS_FOCO:
@@ -138,8 +158,10 @@ def adicionar_pontos_foco(fig: go.Figure) -> go.Figure:
 def construir_figura_estatica(src: str, titulo: str) -> go.Figure:
     """Figura estática com a imagem base64 + pontos de foco."""
     fig = go.Figure()
+
     if not src:
         fig.update_layout(
+            title=titulo,
             xaxis={"visible": False},
             yaxis={"visible": False},
             margin=dict(l=0, r=0, t=40, b=0),
@@ -168,8 +190,8 @@ def construir_figura_estatica(src: str, titulo: str) -> go.Figure:
     fig = adicionar_pontos_foco(fig)
 
     fig.update_layout(
+        title=titulo,
         margin=dict(l=0, r=0, t=40, b=0),
-        dragmode="pan",
         paper_bgcolor="white",
         plot_bgcolor="white",
     )
@@ -177,31 +199,29 @@ def construir_figura_estatica(src: str, titulo: str) -> go.Figure:
 
 
 def construir_animacao(var_key: str, datas_iso: list[str]) -> go.Figure:
-    """Figura animada: um frame por data da previsão."""
-    if len(datas_iso) == 0:
-        return construir_figura_estatica("", "Sem dados para animar")
-
-    src0 = carregar_imagem_base64(var_key, datas_iso[0])
+    """Constrói animação para campo diário."""
     fig = go.Figure()
 
-    if src0:
-        fig.add_layout_image(
-            dict(
-                source=src0,
-                xref="x",
-                yref="y",
-                x=0,
-                y=1,
-                sizex=1,
-                sizey=1,
-                sizing="stretch",
-                layer="below",
-            )
+    # frame inicial
+    src0 = carregar_imagem_base64(var_key, datas_iso[0])
+    fig.add_layout_image(
+        dict(
+            source=src0,
+            xref="x",
+            yref="y",
+            x=0,
+            y=1,
+            sizex=1,
+            sizey=1,
+            sizing="stretch",
+            layer="below",
         )
+    )
 
     fig.update_xaxes(visible=False, range=[0, 1])
     fig.update_yaxes(visible=False, range=[0, 1], scaleanchor="x")
 
+    # frames
     frames = []
     for d in datas_iso:
         src = carregar_imagem_base64(var_key, d)
@@ -294,6 +314,7 @@ def construir_animacao(var_key: str, datas_iso: list[str]) -> go.Figure:
     )
     return fig
 
+
 # ----------------- DATAS ----------------- #
 
 DATAS = listar_datas_disponiveis()
@@ -309,8 +330,11 @@ DATA_DEFAULT = DATAS[-1]
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server  # usado pelo gunicorn
-
 app.title = "Previsão de Chuva - Divino"
+
+# figura fixa (4 pontos) calculada uma vez no startup
+src_fixo = carregar_png_fixo_base64(FIXO_4PONTOS_PNG)
+fig_fixo = construir_figura_estatica(src_fixo, "Precipitação prevista (mm/dia) — 4 pontos")
 
 app.layout = dbc.Container(
     [
@@ -328,68 +352,90 @@ app.layout = dbc.Container(
 
         dbc.Row(
             [
+                # --------- ESQUERDA: GRÁFICO FIXO ---------
                 dbc.Col(
                     [
-                        html.H5("Campos de seleção", className="mb-3"),
-
-                        html.Label("Tipo de mapa:", className="fw-bold"),
-                        dcc.RadioItems(
-                            id="radio-var",
-                            options=[
-                                {"label": v["label"], "value": k}
-                                for k, v in VAR_OPCOES.items()
-                            ],
-                            value="prec",
-                            labelStyle={"display": "block"},
-                            className="mb-3",
-                        ),
-
-                        html.Label("Data da previsão:", className="fw-bold"),
-                        dcc.Dropdown(
-                            id="dropdown-data",
-                            options=[
-                                {"label": formatar_label_br(d), "value": d}
-                                for d in DATAS
-                            ],
-                            value=DATA_DEFAULT,
-                            clearable=False,
-                            className="mb-3",
-                        ),
-
-                        html.Label("Modo de visualização:", className="fw-bold"),
-                        dcc.RadioItems(
-                            id="radio-modo",
-                            options=[
-                                {"label": "Mapa diário", "value": "dia"},
-                                {"label": "Animação (todos os dias)", "value": "anim"},
-                            ],
-                            value="dia",
-                            labelStyle={"display": "block"},
+                        html.H5("Gráfico fixo (4 pontos)", className="mb-2"),
+                        dcc.Graph(
+                            id="graph-4pontos",
+                            figure=fig_fixo,
+                            style={"height": "85vh"},
+                            config={"displayModeBar": False},
                         ),
                         html.Small(
-                            "Obs: Animação só se aplica ao campo diário. "
-                            "Para o acumulado, sempre será um mapa estático.",
+                            f"Arquivo: {FIXO_4PONTOS_PNG} (coloque na mesma pasta do app.py).",
                             className="text-muted",
                         ),
                     ],
-                    md=3,
-                    lg=3,
-                    xl=3,
+                    md=5,
+                    lg=5,
+                    xl=5,
                 ),
+
+                # --------- DIREITA: CONTROLES + MAPA ---------
                 dbc.Col(
                     [
+                        html.H5("Mapa e controles", className="mb-2"),
+
+                        dbc.Card(
+                            dbc.CardBody(
+                                [
+                                    html.Label("Tipo de mapa:", className="fw-bold"),
+                                    dcc.RadioItems(
+                                        id="radio-var",
+                                        options=[
+                                            {"label": v["label"], "value": k}
+                                            for k, v in VAR_OPCOES.items()
+                                        ],
+                                        value="prec",
+                                        inline=False,
+                                        className="mb-3",
+                                    ),
+
+                                    html.Label("Data da previsão:", className="fw-bold"),
+                                    dcc.Dropdown(
+                                        id="dropdown-data",
+                                        options=[
+                                            {"label": formatar_label_br(d), "value": d}
+                                            for d in DATAS
+                                        ],
+                                        value=DATA_DEFAULT,
+                                        clearable=False,
+                                        className="mb-3",
+                                    ),
+
+                                    html.Label("Modo de visualização:", className="fw-bold"),
+                                    dcc.RadioItems(
+                                        id="radio-modo",
+                                        options=[
+                                            {"label": "Mapa diário", "value": "dia"},
+                                            {"label": "Animação (todos os dias)", "value": "anim"},
+                                        ],
+                                        value="dia",
+                                        inline=False,
+                                    ),
+                                    html.Small(
+                                        "Obs: Animação só se aplica ao campo diário. "
+                                        "Para o acumulado, sempre será um mapa estático.",
+                                        className="text-muted",
+                                    ),
+                                ]
+                            ),
+                            className="mb-2",
+                        ),
+
                         dcc.Graph(
                             id="graph-mapa",
-                            style={"height": "85vh"},
+                            style={"height": "75vh"},
                             config={
                                 "scrollZoom": True,
                                 "displayModeBar": False,
                             },
-                        )
+                        ),
                     ],
-                    md=9,
-                    lg=9,
-                    xl=9,
+                    md=7,
+                    lg=7,
+                    xl=7,
                 ),
             ],
             className="mb-3",
@@ -440,6 +486,7 @@ def atualizar_mapa(data_iso, var_key, modo):
 if __name__ == "__main__":
     print("Painel Divino rodando em http://127.0.0.1:8050/")
     app.run(host="0.0.0.0", port=8050, debug=True)
+
 
 
 
